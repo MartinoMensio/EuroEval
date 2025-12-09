@@ -507,7 +507,7 @@ class VLLMModel(HuggingFaceEncoderModel):
         # sampling_params.temperature=0.0
         sampling_params.stop=[stop_token for stop_token in stop_tokens if stop_token]
         sampling_params.structured_outputs=structured_outputs
-        log(f"sampling_params.temperature={sampling_params.temperature}")
+        log(f"sampling_params.temperature={sampling_params.temperature}", level=logging.DEBUG)
 
         # If any of the prompts are empty then we need to replace them with a BOS token
         # so that the vLLM model can generate from them
@@ -1424,5 +1424,5 @@ def sampling_params_from_generation_config(
 
 
     sampling_params = SamplingParams(**kwargs)
-    log(f"sampling_params={sampling_params}")
+    log(f"sampling_params={sampling_params}", level=logging.INFO)
     return sampling_params
