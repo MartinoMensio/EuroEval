@@ -1422,5 +1422,7 @@ def sampling_params_from_generation_config(
         if hasattr(gen_cfg, hf_key) and getattr(gen_cfg, hf_key) is not None:
             kwargs[vllm_key] = getattr(gen_cfg, hf_key)
 
-    return SamplingParams(**kwargs)
 
+    sampling_params = SamplingParams(**kwargs)
+    log(f"sampling_params={sampling_params}")
+    return sampling_params
