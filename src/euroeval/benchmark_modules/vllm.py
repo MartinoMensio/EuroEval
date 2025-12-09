@@ -18,6 +18,7 @@ from pydantic import conlist, create_model
 from transformers.models.auto.configuration_auto import AutoConfig
 from transformers.models.auto.tokenization_auto import AutoTokenizer
 from urllib3.exceptions import RequestError
+from transformers import GenerationConfig
 
 from ..constants import (
     CUSTOM_STOP_TOKENS,
@@ -217,6 +218,8 @@ class VLLMModel(HuggingFaceEncoderModel):
             self.buffer["lora_request"] = LoRARequest(
                 lora_name="adapter", lora_int_id=1, lora_path=adapter_path
             )
+
+        self.sampling_params = sampling_params_from_generation_config(self.model_config.model_id, revision=self.model_config.revision)
 
     def __del__(self) -> None:
         """Clean up the model and tokeniser."""
@@ -489,15 +492,21 @@ class VLLMModel(HuggingFaceEncoderModel):
             if self.generative_type == GenerativeType.REASONING
             else self.dataset_config.max_generated_tokens
         )
-        sampling_params = SamplingParams(
-            max_tokens=max_tokens,
-            logprobs=MAX_VLLM_LOGPROBS
-            if self.buffer["first_label_token_mapping"]
-            else None,
-            temperature=0.0,
-            stop=[stop_token for stop_token in stop_tokens if stop_token],
-            structured_outputs=structured_outputs,
-        )
+        sampling_params = self.sampling_params.clone()
+        # sampling_params = SamplingParams(
+        #     max_tokens=max_tokens,
+        #     logprobs=MAX_VLLM_LOGPROBS
+        #     if self.buffer["first_label_token_mapping"]
+        #     else None,
+        #     temperature=0.0,
+        #     stop=[stop_token for stop_token in stop_tokens if stop_token],
+        #     structured_outputs=structured_outputs,
+        # )
+        sampling_params.max_tokens = max_tokens
+        sampling_params.logprobs = MAX_VLLM_LOGPROBS if self.buffer["first_label_token_mapping"] else None
+        # sampling_params.temperature=0.0
+        sampling_params.stop=[stop_token for stop_token in stop_tokens if stop_token]
+        sampling_params.structured_outputs=structured_outputs
 
         # If any of the prompts are empty then we need to replace them with a BOS token
         # so that the vLLM model can generate from them
@@ -1378,3 +1387,39 @@ def get_vllm_tokenisation_params(
         config_format=config_format,
         load_format=load_format,
     )
+
+def sampling_params_from_generation_config(
+    model_name_or_path: str,
+    revision: str = None,
+) -> SamplingParams:
+    """
+    Load HuggingFace generation_config.json (optionally from a specific
+    revision) and convert compatible fields into vLLM SamplingParams.
+    """
+    gen_cfg = GenerationConfig.from_pretrained(
+        model_name_or_path,
+        revision=revision,
+    )
+
+    kwargs = {}
+
+    # HF GenerationConfig → vLLM SamplingParams field mapping
+    mapping = {
+        "max_new_tokens": "max_tokens",
+        "temperature": "temperature",
+        "top_p": "top_p",
+        "top_k": "top_k",
+        "repetition_penalty": "repetition_penalty",
+        "min_p": "min_p",
+        "presence_penalty": "presence_penalty",
+        "frequency_penalty": "frequency_penalty",
+        "stop": "stop",
+        "stop_sequences": "stop",
+    }
+
+    for hf_key, vllm_key in mapping.items():
+        if hasattr(gen_cfg, hf_key) and getattr(gen_cfg, hf_key) is not None:
+            kwargs[vllm_key] = getattr(gen_cfg, hf_key)
+
+    return SamplingParams(**kwargs)
+
